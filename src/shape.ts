@@ -47,13 +47,66 @@ export function upcomingGames(
     .slice(0, limit);
 }
 
-export function unwrapData(payload: unknown): ApiGame[] {
+export function recentGames(
+  games: ApiGame[],
+  days: number,
+  limit: number,
+): ApiGame[] {
+  const now = Math.floor(Date.now() / 1000);
+  const cutoff = now - days * 86400;
+  const withEpoch = games as (ApiGame & { epoch_time?: number })[];
+  return withEpoch
+    .filter(
+      (g) =>
+        (g.epoch_time ?? 0) <= now &&
+        (g.epoch_time ?? 0) >= cutoff &&
+        !g.canceled,
+    )
+    .sort((a, b) => (b.epoch_time ?? 0) - (a.epoch_time ?? 0))
+    .slice(0, limit);
+}
+
+// Fields that must never reach the client — upstream provider metadata
+// (issue #55) plus DB bookkeeping noise.
+const STRIP = new Set([
+  "id", "data_source", "source_url", "logo_url", "player_image",
+  "created_date", "updated_date", "sport", "league",
+]);
+
+export function shapeRow(row: Record<string, unknown>) {
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(row)) {
+    if (!STRIP.has(k) && v !== null && v !== undefined) out[k] = v;
+  }
+  return out;
+}
+
+// Normalize for cross-league id/label matching (nba_* ids, NBA label, etc.)
+export function norm(s: string): string {
+  return s.toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+// Some endpoints leak rows from other leagues (issue #28). Keep rows whose
+// league field or team_id matches the requested league.
+export function filterLeagueRows(
+  rows: Record<string, unknown>[],
+  league: string,
+): Record<string, unknown>[] {
+  const target = norm(league);
+  return rows.filter((r) => {
+    const lg = typeof r.league === "string" ? norm(r.league) : "";
+    const tid = typeof r.team_id === "string" ? norm(r.team_id) : "";
+    return lg === target || tid.startsWith(target) || tid.includes(`_${target}_`);
+  });
+}
+
+export function unwrapData<T = ApiGame>(payload: unknown): T[] {
   // API responses wrap rows under a collection key, e.g. { count, games: [...] }
   if (payload && typeof payload === "object" && !Array.isArray(payload)) {
     for (const v of Object.values(payload)) {
-      if (Array.isArray(v)) return v as ApiGame[];
+      if (Array.isArray(v)) return v as T[];
     }
     return [];
   }
-  return Array.isArray(payload) ? (payload as ApiGame[]) : [];
+  return Array.isArray(payload) ? (payload as T[]) : [];
 }

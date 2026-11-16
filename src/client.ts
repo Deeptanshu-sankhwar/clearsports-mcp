@@ -37,4 +37,22 @@ export class ClearSportsClient {
   games(league: League) {
     return this.get(`/api/v1/${league}/games`);
   }
+
+  teams(league: League) {
+    return this.get(`/api/v1/${league}/teams`);
+  }
+
+  team(league: League, teamId: string) {
+    return this.get(`/api/v1/${league}/teams/${encodeURIComponent(teamId)}`);
+  }
+
+  injuryStats(league: League, teamId?: string) {
+    const q = teamId ? `?team_id=${encodeURIComponent(teamId)}` : "";
+    return this.get(`/api/v1/${league}/injury-stats${q}`);
+  }
+
+  playerStats(league: League, teamId?: string) {
+    const q = teamId ? `?team_id=${encodeURIComponent(teamId)}` : "";
+    return this.get(`/api/v1/${league}/player-stats${q}`);
+  }
 }
