@@ -55,4 +55,8 @@ export class ClearSportsClient {
     const q = teamId ? `?team_id=${encodeURIComponent(teamId)}` : "";
     return this.get(`/api/v1/${league}/player-stats${q}`);
   }
+
+  gameOdds(league: League) {
+    return this.get(`/api/v1/${league}/game-odds`);
+  }
 }

@@ -81,6 +81,78 @@ export function shapeRow(row: Record<string, unknown>) {
   return out;
 }
 
+export interface ApiOddsRow {
+  game_key?: string;
+  epoch_time?: number;
+  time_utc?: string;
+  sportsbook_slug?: string;
+  market_type?: string;
+  selection?: string;
+  home_team_abbreviation?: string;
+  away_team_abbreviation?: string;
+  away_moneyline_american?: number | null;
+  home_moneyline_american?: number | null;
+  away_team_spread?: number | null;
+  away_spread_odds_american?: number | null;
+  home_team_spread?: number | null;
+  home_spread_odds_american?: number | null;
+  total_points?: number | null;
+  over_odds_american?: number | null;
+  under_odds_american?: number | null;
+  odds_timestamp?: string;
+  canceled?: boolean;
+}
+
+// Merge (game × book × market) selection rows into one compact market line.
+export function shapeOdds(rows: ApiOddsRow[], limit: number) {
+  const now = Math.floor(Date.now() / 1000);
+  const games = new Map<
+    string,
+    { time_utc?: string; epoch?: number; matchup: string; books: Map<string, Record<string, unknown>> }
+  >();
+
+  for (const r of rows) {
+    if (!r.game_key || r.canceled) continue;
+    if ((r.epoch_time ?? 0) < now) continue; // pre-game odds only
+    let g = games.get(r.game_key);
+    if (!g) {
+      g = {
+        time_utc: r.time_utc,
+        epoch: r.epoch_time,
+        matchup: `${r.away_team_abbreviation} @ ${r.home_team_abbreviation}`,
+        books: new Map(),
+      };
+      games.set(r.game_key, g);
+    }
+    const key = `${r.sportsbook_slug}|${r.market_type}`;
+    const book = g.books.get(key) ?? { book: r.sportsbook_slug, market: r.market_type };
+    if (r.market_type === "moneyline") {
+      book.home = r.home_moneyline_american ?? book.home;
+      book.away = r.away_moneyline_american ?? book.away;
+    } else if (r.market_type === "spread") {
+      book.home_spread = r.home_team_spread ?? book.home_spread;
+      book.home_odds = r.home_spread_odds_american ?? book.home_odds;
+      book.away_spread = r.away_team_spread ?? book.away_spread;
+      book.away_odds = r.away_spread_odds_american ?? book.away_odds;
+    } else if (r.market_type === "total") {
+      book.points = r.total_points ?? book.points;
+      book.over = r.over_odds_american ?? book.over;
+      book.under = r.under_odds_american ?? book.under;
+    }
+    if (r.odds_timestamp) book.as_of = r.odds_timestamp;
+    g.books.set(key, book);
+  }
+
+  return [...games.values()]
+    .sort((a, b) => (a.epoch ?? 0) - (b.epoch ?? 0))
+    .slice(0, limit)
+    .map((g) => ({
+      matchup: g.matchup,
+      time_utc: g.time_utc,
+      lines: [...g.books.values()],
+    }));
+}
+
 // Normalize for cross-league id/label matching (nba_* ids, NBA label, etc.)
 export function norm(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9]/g, "");

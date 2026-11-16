@@ -8,6 +8,7 @@ import {
   norm,
   recentGames,
   shapeGame,
+  shapeOdds,
   shapeRow,
   upcomingGames,
   unwrapData,
@@ -217,6 +218,58 @@ server.registerTool(
         count: rows.length,
         players: rows.slice(0, limit).map(shapeRow),
       });
+    } catch (e) {
+      return err(e);
+    }
+  },
+);
+
+server.registerTool(
+  "get_odds",
+  {
+    title: "Get odds",
+    description:
+      "Current pre-game odds board for a league: moneyline, spread and totals across ~10 US sportsbooks. Lines are timestamped; pre-game only (not in-play).",
+    inputSchema: {
+      league: leagueSchema,
+      team: z
+        .string()
+        .optional()
+        .describe("Optional team abbreviation filter, e.g. 'KC', 'LAL'"),
+      market: z
+        .enum(["moneyline", "spread", "total"])
+        .optional()
+        .describe("Optional: only return one market type"),
+      limit: z
+        .number()
+        .int()
+        .min(1)
+        .max(30)
+        .default(5)
+        .describe("Max games to return, 1-30"),
+    },
+  },
+  async ({ league, team, market, limit }) => {
+    try {
+      const payload = await client.gameOdds(league);
+      let rows = unwrapData<Record<string, unknown>>(payload);
+      if (team) {
+        const q = norm(team);
+        rows = rows.filter(
+          (r) =>
+            (typeof r.home_team_abbreviation === "string" &&
+              norm(r.home_team_abbreviation) === q) ||
+            (typeof r.away_team_abbreviation === "string" &&
+              norm(r.away_team_abbreviation) === q),
+        );
+      }
+      const games = shapeOdds(rows as never[], limit).map((g) => ({
+        ...g,
+        lines: market
+          ? g.lines.filter((l) => l.market === market)
+          : g.lines,
+      }));
+      return text({ league, count: games.length, games });
     } catch (e) {
       return err(e);
     }
